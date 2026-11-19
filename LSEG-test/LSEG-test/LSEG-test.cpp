@@ -1,6 +1,3 @@
-// LSEG-test.cpp : This file contains the 'main' function. Program execution begins and ends there.
-//
-
 #include <algorithm>
 #include <format>
 #include <fstream>
@@ -70,6 +67,8 @@ int writeMarketDataRows(std::string symbol, std::vector<MarketDataRow> rows) {
     return 0;
 }
 
+// One of the two main threads. This function reads in the CSV file and
+// processes the data into a format for easier use by the consumer thread.
 void producer(std::string filepath) {
     std::ifstream file(filepath);
     std::string line;
@@ -115,6 +114,9 @@ void producer(std::string filepath) {
 
 }
 
+// One of the two main threads. This function consumes the formatted data
+// provided by the producer and outputs it to individual files separated by
+// the financial instrument referenced by the data.
 void consumer() {
     std::map<std::string, std::vector<MarketDataRow>> groupedRows;
 
@@ -122,16 +124,19 @@ void consumer() {
         MarketDataRow marketDataRow;
 
         {
+            // Wait for the producer to give us something to consume.
             std::unique_lock<std::mutex> lock(queueMutex);
             queueCondition.wait(lock,
                 [] {
                     return !marketDataQueue.empty() || producerFinished;
                 });
 
+            // End the loop if there's no more data coming.
             if (marketDataQueue.empty() && producerFinished) {
                 break;
             }
 
+            // Get the next row
             marketDataRow = marketDataQueue.front();
             marketDataQueue.pop();
         }
@@ -144,9 +149,7 @@ void consumer() {
     }
 
     // We've finished reading in the data, so now we can write our output files.
-
     for (const auto& [symbol, rows] : groupedRows) {
-        // Sort rows by price
         writeMarketDataRows(symbol, rows);
         std::cout << std::format("{} Rows: {}\n", symbol, rows.size());
     }
